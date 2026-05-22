@@ -11,9 +11,7 @@ class MapWidget(QWebEngineView):
 
         self.map_ready = False
 
-        self.loadFinished.connect(
-            self.on_load_finished
-        )
+        self.loadFinished.connect(self.on_load_finished)
 
         html = """
         <!DOCTYPE html>
@@ -48,7 +46,27 @@ class MapWidget(QWebEngineView):
 
                     width: 100%;
                     height: 100%;
+
                 }
+
+                .leaflet-popup-content-wrapper {
+
+    background: #0d1117;
+    color: #00ffee;
+    border: 1px solid #00ffee;
+    border-radius: 10px;
+    font-family: 'Share Tech Mono';
+}
+
+.leaflet-popup-tip {
+
+    background: #0d1117;
+}
+
+.leaflet-popup-content {
+
+    font-size: 12px;
+}
 
             </style>
 
@@ -65,28 +83,80 @@ class MapWidget(QWebEngineView):
                     2
                 );
 
-                L.tileLayer(
-                    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    {
-                        attribution: 'OpenStreetMap'
-                    }
+            L.tileLayer(
+                'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+                {
+                    attribution: '&copy; OpenStreetMap &copy; CARTO'
+                }
                 ).addTo(map);
 
-                function addMarker(
+                function addAttackPath(
                     lat,
                     lon,
-                    text
+                    popupText,
+                    severity
                 ) {
 
-                    L.circleMarker(
-                        [lat, lon],
+                    var origin = [51.5074, -0.1278];
+
+                    var destination = [lat, lon];
+
+                    let color = 'cyan';
+
+                    if (severity === 'MEDIUM') {
+                        color = 'yellow';
+                    }
+
+                    if (severity === 'HIGH') {
+                        color = 'red';
+                    }
+
+                    var line = L.polyline(
+                        [origin, destination],
                         {
-                            radius: 8,
-                            color: 'red'
+                            color: color,
+                            weight: 3,
+                            opacity: 0.8
+                        }
+                    ).addTo(map);
+
+                    var marker = L.circleMarker(
+                        destination,
+                        {
+                            radius: 6,
+                            color: color,
+                            fillColor: color,
+                            fillOpacity: 0.8
                         }
                     )
                     .addTo(map)
-                    .bindPopup(text);
+                    .bindPopup(popupText);
+
+                    let opacity = 0.8;
+
+                    let fade = setInterval(function() {
+
+                        opacity -= 0.02;
+
+                        line.setStyle({
+                            opacity: opacity
+                        });
+
+                        marker.setStyle({
+                            opacity: opacity,
+                            fillOpacity: opacity
+                        });
+
+                        if (opacity <= 0) {
+
+                            map.removeLayer(line);
+
+                            map.removeLayer(marker);
+
+                            clearInterval(fade);
+                        }
+
+                    }, 200);
                 }
 
             </script>

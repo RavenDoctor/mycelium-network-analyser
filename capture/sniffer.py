@@ -81,7 +81,8 @@ class PacketSniffer(QObject):
                 # Detection engine
                 alerts, severity = analyse_packet(
                     process_name,
-                    dport
+                    dport,
+                    dst
                 )
 
                 timestamp = datetime.now().strftime(

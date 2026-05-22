@@ -7,7 +7,10 @@ from PyQt6.QtWidgets import (
     QLabel,
     QHBoxLayout,
     QHeaderView,
-    QSplitter
+    QSplitter,
+    QListWidget,
+    QListWidgetItem,
+    QTabWidget
 )
 
 from PyQt6.QtCore import Qt, QTimer
@@ -18,7 +21,11 @@ from threatintel.geoip import lookup_ip
 
 import pyqtgraph as pg
 
+import time
+
 from collections import deque
+
+from network.lan_scanner import scan_network
 
 
 class Dashboard(QMainWindow):
@@ -33,8 +40,8 @@ class Dashboard(QMainWindow):
 
         self.graph_data = deque(maxlen=60)
 
-        # Map caching
-        self.seen_ips = set()
+        # Map state
+        self.last_seen_paths = {}
 
         self.geo_cache = {}
 
@@ -81,13 +88,31 @@ class Dashboard(QMainWindow):
         self.graph_widget = pg.PlotWidget()
 
         self.graph_widget.setTitle(
-            "Packets Per Second"
+            '<span style="color:#00ffee;'
+            'font-size:16pt;'
+            'font-family:Orbitron;">'
+            'Packets Per Second'
+            '</span>'
         )
 
         self.graph_widget.showGrid(
             x=True,
             y=True
         )
+
+        axis_style = {
+        "color": "#00ffee",
+        "font-size": "10pt",
+        "font-family": "Share Tech Mono"
+        }
+
+        self.graph_widget.getAxis(
+        "left"
+        ).setTextPen("#00ffee")
+
+        self.graph_widget.getAxis(
+        "bottom"
+        ).setTextPen("#00ffee")
 
         self.graph_widget.setYRange(0, 100)
 
@@ -100,6 +125,50 @@ class Dashboard(QMainWindow):
         # =========================
 
         self.map_widget = MapWidget()
+
+        # =========================
+        # THREAT FEED
+        # =========================
+
+        self.threat_feed = QListWidget()
+
+        self.threat_feed.setMinimumWidth(350)
+
+# =========================
+# LAN DEVICES
+# =========================
+
+        self.lan_table = QTableWidget()
+
+        self.lan_table.setColumnCount(3)
+
+        self.lan_table.setHorizontalHeaderLabels([
+        "IP",
+        "MAC",
+        "Vendor"
+        ])
+
+        self.lan_table.horizontalHeader().setSectionResizeMode(
+        QHeaderView.ResizeMode.Stretch
+        )
+
+        self.lan_table.setMaximumHeight(220)   
+
+# =========================
+# TAB SYSTEM
+# =========================
+
+        self.tabs = QTabWidget()
+
+        self.tabs.addTab(
+            self.table,
+            "Packets"
+        )
+
+        self.tabs.addTab(
+            self.lan_table,
+            "LAN Devices"
+        )    
 
         # =========================
         # STATS BAR
@@ -116,6 +185,15 @@ class Dashboard(QMainWindow):
         self.status_label = QLabel(
             "Status: Monitoring"
         )
+        from PyQt6.QtWidgets import QPushButton
+
+        self.scan_button = QPushButton(
+            "Scan LAN"
+        )
+
+        self.scan_button.clicked.connect(
+        self.run_lan_scan
+        )
 
         top_bar = QHBoxLayout()
 
@@ -131,25 +209,43 @@ class Dashboard(QMainWindow):
             self.status_label
         )
 
+        top_bar.addWidget(
+            self.scan_button
+        )
+
         top_bar.addStretch()
 
         # =========================
         # SPLITTERS
         # =========================
 
+        left_splitter = QSplitter(
+            Qt.Orientation.Vertical
+        )
+
+        left_splitter.addWidget(
+            self.graph_widget
+        )
+
+        left_splitter.addWidget(
+            self.map_widget
+        )
+
+        left_splitter.setSizes([300, 400])
+
         top_splitter = QSplitter(
             Qt.Orientation.Horizontal
         )
 
         top_splitter.addWidget(
-            self.graph_widget
+            left_splitter
         )
 
         top_splitter.addWidget(
-            self.map_widget
+            self.threat_feed
         )
 
-        top_splitter.setSizes([700, 700])
+        top_splitter.setSizes([1200, 300])
 
         main_splitter = QSplitter(
             Qt.Orientation.Vertical
@@ -160,11 +256,10 @@ class Dashboard(QMainWindow):
         )
 
         main_splitter.addWidget(
-            self.table
+            self.tabs
         )
 
         main_splitter.setSizes([350, 550])
-
         # =========================
         # MAIN LAYOUT
         # =========================
@@ -215,7 +310,7 @@ class Dashboard(QMainWindow):
 
     def add_packet(
         self,
-        time,
+        timestamp,
         src,
         dst,
         sport,
@@ -237,7 +332,7 @@ class Dashboard(QMainWindow):
         # =========================
 
         values = [
-            time,
+            timestamp,
             src,
             dst,
             sport,
@@ -319,6 +414,41 @@ class Dashboard(QMainWindow):
             )
 
         # =========================
+        # THREAT FEED
+        # =========================
+
+        if severity in ["HIGH", "MEDIUM"]:
+
+            message = (
+                f"[{severity}] "
+                f"{process} → {alerts}"
+            )
+
+            item = QListWidgetItem(message)
+
+            if severity == "HIGH":
+
+                item.setForeground(
+                    Qt.GlobalColor.red
+                )
+
+            elif severity == "MEDIUM":
+
+                item.setForeground(
+                    Qt.GlobalColor.yellow
+                )
+
+            self.threat_feed.insertItem(
+                0,
+                item
+            )
+
+            # Feed size limit
+            if self.threat_feed.count() > 100:
+
+                self.threat_feed.takeItem(100)
+
+        # =========================
         # ROW LIMIT
         # =========================
 
@@ -357,10 +487,23 @@ class Dashboard(QMainWindow):
         ):
             return
 
-        # Only process NEW IPs
-        if dst not in self.seen_ips:
+        # =========================
+        # PATH RATE LIMITING
+        # =========================
 
-            self.seen_ips.add(dst)
+        current_time = time.time()
+
+        cooldown = 3
+
+        last_seen = self.last_seen_paths.get(
+            dst,
+            0
+        )
+
+        # Redraw every X seconds
+        if current_time - last_seen > cooldown:
+
+            self.last_seen_paths[dst] = current_time
 
             # Use cache
             if dst in self.geo_cache:
@@ -377,12 +520,53 @@ class Dashboard(QMainWindow):
 
             if geo and self.map_widget.map_ready:
 
+                popup = f"""
+                <b>IP:</b> {dst}<br>
+                <b>Country:</b> {geo["country"]}<br>
+                <b>Process:</b> {process}<br>
+                <b>Severity:</b> {severity}<br>
+                <b>Alert:</b> {alerts}
+                """
+
                 js = f"""
-                addMarker(
+                addAttackPath(
                     {geo['lat']},
                     {geo['lon']},
-                    '{dst} ({geo["country"]})'
+                    `{popup}`,
+                    '{severity}'
                 );
                 """
 
                 self.map_widget.page().runJavaScript(js)
+            
+    def run_lan_scan(self):
+
+        self.lan_table.setRowCount(0)
+
+        devices = scan_network(
+            "192.168.1.0/24"
+        )
+
+        for device in devices:
+
+            row = self.lan_table.rowCount()
+
+            self.lan_table.insertRow(row)
+
+            self.lan_table.setItem(
+                row,
+                0,
+                QTableWidgetItem(device["ip"])
+            )
+
+            self.lan_table.setItem(
+                row,
+                1,
+                QTableWidgetItem(device["mac"])
+            )
+
+            self.lan_table.setItem(
+                row,
+                2,
+                QTableWidgetItem(device["vendor"])
+            )

@@ -1,3 +1,5 @@
+from detection.beaconing import detect_beaconing
+
 SUSPICIOUS_PORTS = [
     4444,
     5555,
@@ -16,7 +18,8 @@ SUSPICIOUS_PROCESSES = [
 
 def analyse_packet(
     process,
-    dport
+    dport,
+    dst_ip
 ):
 
     alerts = []
@@ -42,5 +45,14 @@ def analyse_packet(
         )
 
         severity = "MEDIUM"
+
+# Beacon detection
+    if detect_beaconing(dst_ip, process):
+
+        alerts.append(
+            "Possible beaconing detected"
+        )
+
+        severity = "HIGH"
 
     return alerts, severity
