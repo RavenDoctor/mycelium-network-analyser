@@ -1,83 +1,123 @@
 import sys
 
-import threading
-
-import qdarkstyle
+from PyQt6.QtCore import (
+    Qt,
+    QTimer
+)
 
 from PyQt6.QtWidgets import QApplication
 
-from ui.dashboard import Dashboard
+# IMPORTANT
+QApplication.setAttribute(
+    Qt.ApplicationAttribute.AA_ShareOpenGLContexts
+)
 
-from capture.sniffer import PacketSniffer
+from ui.splash import SplashScreen
+from ui.login import LoginWindow
 
 
 app = QApplication(sys.argv)
 
-app.setStyleSheet(
-    qdarkstyle.load_stylesheet_pyqt6()
-)
+app.setStyle("Fusion")
 
-app.setStyleSheet(app.styleSheet() + """
+# =========================
+# STYLESHEET
+# =========================
 
-QMainWindow {
-    background-color: #0a0f14;
+app.setStyleSheet("""
+
+QWidget {
+    background-color: #05080c;
+    color: #d8dee9;
+    font-family: Consolas;
+    font-size: 12px;
 }
 
 QLabel {
-    font-family: 'Orbitron';
-    font-size: 14px;
-    color: #00ffee;
-    font-weight: bold;
+    color: #4dd0e1;
 }
 
 QTableWidget {
-    background-color: #0d1117;
-    color: #00ffee;
-    font-weight: bold;
-    gridline-color: #1f2937;
-    font-family: 'Share Tech Mono';
-    font-size: 12px;
-    border: 1px solid #00ffee;
+    background-color: #0b1118;
+    border: none;
+    gridline-color: #16202a;
+    color: white;
+    selection-background-color: #123040;
 }
 
 QHeaderView::section {
     background-color: #111827;
-    color: #00ffee;
-    font-weight: bold;
+    color: #4dd0e1;
     padding: 6px;
-    border: 1px solid #00ffee;
-    font-family: 'Orbitron';
-    font-size: 12px;
+    border: none;
+    font-weight: bold;
 }
 
 QListWidget {
-    background-color: #0d1117;
-    font-weight: bold;
-    color: #00ffee;
-    font-family: 'Share Tech Mono';
-    border: 1px solid #00ffee;
+    background-color: #0b1118;
+    border: none;
+    color: white;
+}
+
+QListWidget::item {
+    padding: 10px;
+    border-bottom: 1px solid #111827;
+}
+
+QListWidget::item:selected {
+    background-color: #123040;
+}
+
+QPushButton {
+    background-color: #111827;
+    border: 1px solid #1f2a35;
+    padding: 8px;
+    color: #4dd0e1;
+}
+
+QPushButton:hover {
+    background-color: #123040;
+}
+
+QLineEdit {
+    background-color: #0b1118;
+    border: 1px solid #1f2a35;
+    padding: 8px;
+    color: white;
+}
+
+QSplitter::handle {
+    background-color: #05080c;
+    border: none;
 }
 
 """)
 
-window = Dashboard()
+# =========================
+# WINDOWS
+# =========================
 
-window.show()
+splash = SplashScreen()
 
-sniffer = PacketSniffer()
+login_window = LoginWindow()
 
-# Connect Qt signal safely
-sniffer.packet_received.connect(
-    window.add_packet
+# =========================
+# STARTUP FLOW
+# =========================
+
+def show_login():
+
+    splash.close()
+
+    login_window.show()
+
+# SHOW SPLASH
+splash.show()
+
+# WAIT 5s THEN LOGIN
+QTimer.singleShot(
+    5000,
+    show_login
 )
-
-# Start sniffer thread
-thread = threading.Thread(
-    target=sniffer.start
-)
-
-thread.daemon = True
-
-thread.start()
 
 sys.exit(app.exec())

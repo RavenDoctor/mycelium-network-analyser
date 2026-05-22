@@ -1,6 +1,7 @@
 from collections import defaultdict
-
+from detection.beacon_data import beaconing_results
 import time
+
 
 
 # Stores timestamps per IP
@@ -70,5 +71,14 @@ def detect_beaconing(
 
         for i in intervals
     )
+
+    if consistent:
+
+        beaconing_results[dst_ip] = {
+
+        "hits": len(timestamps),
+
+        "avg_interval": round(avg, 2)
+    }
 
     return consistent

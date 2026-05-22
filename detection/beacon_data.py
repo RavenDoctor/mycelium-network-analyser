@@ -1,0 +1,1 @@
+beaconing_results = {}

@@ -10,14 +10,19 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QListWidget,
     QListWidgetItem,
-    QTabWidget
+    QPushButton,
+    QStackedWidget,
 )
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 
 from ui.map_widget import MapWidget
 
 from threatintel.geoip import lookup_ip
+
+from network.lan_scanner import scan_network
+
+from network.port_scanner import scan_ports
 
 import pyqtgraph as pg
 
@@ -25,8 +30,19 @@ import time
 
 from collections import deque
 
-from network.lan_scanner import scan_network
+from detection.beacon_data import beaconing_results
 
+class LanScanWorker(QThread):
+
+    finished = pyqtSignal(list)
+
+    def run(self):
+
+        devices = scan_network(
+            "192.168.1.0/24"
+        )
+
+        self.finished.emit(devices)
 
 class Dashboard(QMainWindow):
 
@@ -34,23 +50,55 @@ class Dashboard(QMainWindow):
 
         super().__init__()
 
+        # =========================
+        # STATE
+        # =========================
+
         self.packet_count = 0
 
         self.packet_rate = 0
 
-        self.graph_data = deque(maxlen=60)
+        self.graph_data = deque(maxlen=30)
 
-        # Map state
         self.last_seen_paths = {}
 
         self.geo_cache = {}
+
+        # =========================
+        # WINDOW
+        # =========================
 
         self.setWindowTitle("Mycelium")
 
         self.resize(1600, 900)
 
         # =========================
-        # TABLE
+        # SIDEBAR
+        # =========================
+
+        self.sidebar = QListWidget()
+
+        self.sidebar.addItems([
+            "Dashboard",
+            "Packet Analysis",
+            "LAN Recon",
+            "Beacon Analysis"
+        ])
+
+        self.sidebar.setFixedWidth(220)
+
+        self.sidebar.currentRowChanged.connect(
+            self.change_page
+        )
+
+        # =========================
+        # STACKED PAGES
+        # =========================
+
+        self.pages = QStackedWidget()
+
+        # =========================
+        # PACKET TABLE
         # =========================
 
         self.table = QTableWidget()
@@ -69,9 +117,7 @@ class Dashboard(QMainWindow):
             "Severity"
         ])
 
-        header = self.table.horizontalHeader()
-
-        header.setSectionResizeMode(
+        self.table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch
         )
 
@@ -79,16 +125,24 @@ class Dashboard(QMainWindow):
             QTableWidget.EditTrigger.NoEditTriggers
         )
 
-        self.table.setAlternatingRowColors(True)
-
         # =========================
         # GRAPH
         # =========================
 
         self.graph_widget = pg.PlotWidget()
 
+        self.graph_widget.getPlotItem().layout.setContentsMargins(
+            20,
+            10,
+            10,
+            20
+        )
+
+        self.graph_widget.setMinimumHeight(220)
+        self.graph_widget.setMaximumHeight(260)
+
         self.graph_widget.setTitle(
-            '<span style="color:#00ffee;'
+            '<span style="color:#4dd0e1;'
             'font-size:16pt;'
             'font-family:Orbitron;">'
             'Packets Per Second'
@@ -100,24 +154,22 @@ class Dashboard(QMainWindow):
             y=True
         )
 
-        axis_style = {
-        "color": "#00ffee",
-        "font-size": "10pt",
-        "font-family": "Share Tech Mono"
-        }
+        self.graph_widget.getAxis(
+            "left"
+        ).setTextPen("#4dd0e1")
 
         self.graph_widget.getAxis(
-        "left"
-        ).setTextPen("#00ffee")
+            "left"
+        ).setWidth(60)
 
         self.graph_widget.getAxis(
-        "bottom"
-        ).setTextPen("#00ffee")
+            "bottom"
+        ).setTextPen("#4dd0e1")
 
         self.graph_widget.setYRange(0, 100)
 
         self.graph_line = self.graph_widget.plot(
-            pen='c'
+            pen='#4dd0e1'
         )
 
         # =========================
@@ -132,46 +184,108 @@ class Dashboard(QMainWindow):
 
         self.threat_feed = QListWidget()
 
-        self.threat_feed.setMinimumWidth(350)
+        self.threat_feed.setFixedWidth(180)
 
-# =========================
-# LAN DEVICES
-# =========================
+        # =========================
+        # LAN TABLE
+        # =========================
 
         self.lan_table = QTableWidget()
 
-        self.lan_table.setColumnCount(3)
+        self.lan_table.setColumnCount(5)
 
         self.lan_table.setHorizontalHeaderLabels([
-        "IP",
-        "MAC",
-        "Vendor"
+            "IP",
+            "MAC",
+            "Vendor",
+            "Hostname",
+            "Device Type"
         ])
 
         self.lan_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
+
+        self.lan_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers
+        )
+
+        # =========================
+        # BEACON TABLE
+        # =========================
+
+        self.beacon_table = QTableWidget()
+
+        self.beacon_table.setColumnCount(4)
+
+        self.beacon_table.setHorizontalHeaderLabels([
+        "Destination IP",
+        "Hits",
+        "Avg Interval",
+        "Severity"
+        ])
+
+        self.beacon_table.horizontalHeader().setSectionResizeMode(
         QHeaderView.ResizeMode.Stretch
         )
 
-        self.lan_table.setMaximumHeight(220)   
-
-# =========================
-# TAB SYSTEM
-# =========================
-
-        self.tabs = QTabWidget()
-
-        self.tabs.addTab(
-            self.table,
-            "Packets"
+        self.beacon_table.setEditTriggers(
+        QTableWidget.EditTrigger.NoEditTriggers
         )
 
-        self.tabs.addTab(
-            self.lan_table,
-            "LAN Devices"
-        )    
+        # =========================
+        # BEACON PAGE
+        # =========================
+
+        beacon_page = QWidget()
+
+        beacon_layout = QVBoxLayout()
+
+        beacon_layout.addWidget(
+            self.beacon_table
+        )
+
+        beacon_page.setLayout(
+            beacon_layout
+        )
 
         # =========================
-        # STATS BAR
+        # PORT SCANNER TABLE
+        # =========================
+
+        self.port_table = QTableWidget()
+
+        self.port_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )   
+
+        self.port_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers
+        )
+
+        self.port_table.setColumnCount(4)
+
+        self.port_table.setHorizontalHeaderLabels([
+            "Port",
+            "Service",
+            "Status",
+            "Risk"
+        ])
+
+        self.port_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
+
+        self.port_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers
+        )
+
+        self.target_input = QLabel(
+        "Select device from LAN Recon"
+        )
+
+        # =========================
+        # TOP BAR
         # =========================
 
         self.packet_label = QLabel(
@@ -185,7 +299,6 @@ class Dashboard(QMainWindow):
         self.status_label = QLabel(
             "Status: Monitoring"
         )
-        from PyQt6.QtWidgets import QPushButton
 
         self.scan_button = QPushButton(
             "Scan LAN"
@@ -194,6 +307,7 @@ class Dashboard(QMainWindow):
         self.scan_button.clicked.connect(
         self.run_lan_scan
         )
+
 
         top_bar = QHBoxLayout()
 
@@ -210,13 +324,13 @@ class Dashboard(QMainWindow):
         )
 
         top_bar.addWidget(
-            self.scan_button
+        self.scan_button
         )
 
         top_bar.addStretch()
 
         # =========================
-        # SPLITTERS
+        # DASHBOARD SPLITTERS
         # =========================
 
         left_splitter = QSplitter(
@@ -231,7 +345,9 @@ class Dashboard(QMainWindow):
             self.map_widget
         )
 
-        left_splitter.setSizes([300, 400])
+        left_splitter.setStretchFactor(0, 1)
+
+        left_splitter.setStretchFactor(1, 6)
 
         top_splitter = QSplitter(
             Qt.Orientation.Horizontal
@@ -245,24 +361,142 @@ class Dashboard(QMainWindow):
             self.threat_feed
         )
 
-        top_splitter.setSizes([1200, 300])
+        top_splitter.setStretchFactor(0, 8)
 
-        main_splitter = QSplitter(
-            Qt.Orientation.Vertical
-        )
+        top_splitter.setStretchFactor(1, 1)
 
-        main_splitter.addWidget(
+        # =========================
+        # DASHBOARD PAGE
+        # =========================
+
+        dashboard_page = QWidget()
+
+        dashboard_layout = QVBoxLayout()
+
+        dashboard_layout.addWidget(
             top_splitter
         )
 
-        main_splitter.addWidget(
-            self.tabs
+        dashboard_page.setLayout(
+            dashboard_layout
         )
 
-        main_splitter.setSizes([350, 550])
+        # =========================
+        # PACKET PAGE
+        # =========================
+
+        packet_page = QWidget()
+
+        packet_layout = QVBoxLayout()
+
+        packet_layout.addWidget(
+            self.table
+        )
+
+        packet_page.setLayout(
+            packet_layout
+        )
+
+        # =========================
+        # LAN PAGE
+        # =========================
+
+        lan_page = QWidget()
+
+        lan_layout = QHBoxLayout()
+
+        lan_splitter = QSplitter(
+            Qt.Orientation.Horizontal
+        )
+
+        # LEFT SIDE
+        left_widget = QWidget()
+
+        left_layout = QVBoxLayout()
+
+        left_layout.addWidget(
+            self.lan_table
+        )
+
+        left_widget.setLayout(
+            left_layout
+        )
+
+        # RIGHT SIDE
+        right_widget = QWidget()
+
+        right_layout = QVBoxLayout()
+
+        self.selected_device_label = QLabel(
+            "No device selected"
+        )
+
+        right_layout.addWidget(
+            self.selected_device_label
+        )
+
+        right_layout.addWidget(
+            self.port_table
+        )
+
+        right_widget.setLayout(
+            right_layout
+        )
+
+        # ADD TO SPLITTER
+        lan_splitter.addWidget(
+            left_widget
+        )
+
+        lan_splitter.addWidget(
+            right_widget
+        )
+
+        lan_splitter.setStretchFactor(0, 2)
+
+        lan_splitter.setStretchFactor(1, 1)
+
+        lan_layout.addWidget(
+            lan_splitter
+        )
+
+        lan_page.setLayout(
+            lan_layout
+        )
+
+        # =========================
+        # ADD PAGES
+        # =========================
+
+        self.pages.addWidget(
+            dashboard_page
+        )
+
+        self.pages.addWidget(
+            packet_page
+        )
+
+        self.pages.addWidget(
+            lan_page
+        )
+
+        self.pages.addWidget(
+            beacon_page
+        )
+
         # =========================
         # MAIN LAYOUT
         # =========================
+
+        content_layout = QHBoxLayout()
+
+        content_layout.addWidget(
+            self.sidebar
+        )
+
+        content_layout.addWidget(
+            self.pages
+        )
 
         layout = QVBoxLayout()
 
@@ -270,8 +504,8 @@ class Dashboard(QMainWindow):
             top_bar
         )
 
-        layout.addWidget(
-            main_splitter
+        layout.addLayout(
+            content_layout
         )
 
         container = QWidget()
@@ -285,7 +519,7 @@ class Dashboard(QMainWindow):
         )
 
         # =========================
-        # GRAPH TIMER
+        # TIMERS
         # =========================
 
         self.timer = QTimer()
@@ -295,6 +529,18 @@ class Dashboard(QMainWindow):
         )
 
         self.timer.start(1000)
+
+    # =========================
+    # PAGE SWITCHING
+    # =========================
+
+    def change_page(self, index):
+
+        self.pages.setCurrentIndex(index)
+
+    # =========================
+    # GRAPH UPDATES
+    # =========================
 
     def update_graph(self):
 
@@ -307,6 +553,12 @@ class Dashboard(QMainWindow):
         )
 
         self.packet_rate = 0
+
+        self.update_beacon_table()
+
+    # =========================
+    # PACKET PROCESSING
+    # =========================
 
     def add_packet(
         self,
@@ -321,15 +573,11 @@ class Dashboard(QMainWindow):
         severity
     ):
 
-        MAX_ROWS = 1000
+        MAX_ROWS = 300
 
         row = self.table.rowCount()
 
         self.table.insertRow(row)
-
-        # =========================
-        # TABLE DATA
-        # =========================
 
         values = [
             timestamp,
@@ -358,7 +606,8 @@ class Dashboard(QMainWindow):
         if proto == "TCP":
 
             self.table.item(
-                row, 5
+                row,
+                5
             ).setForeground(
                 Qt.GlobalColor.cyan
             )
@@ -366,7 +615,8 @@ class Dashboard(QMainWindow):
         elif proto == "UDP":
 
             self.table.item(
-                row, 5
+                row,
+                5
             ).setForeground(
                 Qt.GlobalColor.yellow
             )
@@ -378,7 +628,8 @@ class Dashboard(QMainWindow):
         if severity == "HIGH":
 
             self.table.item(
-                row, 8
+                row,
+                8
             ).setForeground(
                 Qt.GlobalColor.red
             )
@@ -386,7 +637,8 @@ class Dashboard(QMainWindow):
         elif severity == "MEDIUM":
 
             self.table.item(
-                row, 8
+                row,
+                8
             ).setForeground(
                 Qt.GlobalColor.yellow
             )
@@ -394,13 +646,14 @@ class Dashboard(QMainWindow):
         elif severity == "LOW":
 
             self.table.item(
-                row, 8
+                row,
+                8
             ).setForeground(
                 Qt.GlobalColor.green
             )
 
         # =========================
-        # THREAT COUNTER
+        # THREAT FEED
         # =========================
 
         if severity in ["HIGH", "MEDIUM"]:
@@ -412,12 +665,6 @@ class Dashboard(QMainWindow):
             self.alert_label.setText(
                 f"Threats: {current + 1}"
             )
-
-        # =========================
-        # THREAT FEED
-        # =========================
-
-        if severity in ["HIGH", "MEDIUM"]:
 
             message = (
                 f"[{severity}] "
@@ -443,7 +690,6 @@ class Dashboard(QMainWindow):
                 item
             )
 
-            # Feed size limit
             if self.threat_feed.count() > 100:
 
                 self.threat_feed.takeItem(100)
@@ -457,13 +703,7 @@ class Dashboard(QMainWindow):
             self.table.removeRow(0)
 
         # =========================
-        # AUTO SCROLL
-        # =========================
-
-        self.table.scrollToBottom()
-
-        # =========================
-        # PACKET COUNTERS
+        # PACKET STATS
         # =========================
 
         self.packet_count += 1
@@ -475,10 +715,9 @@ class Dashboard(QMainWindow):
         )
 
         # =========================
-        # MAP GEOLOCATION
+        # MAP VISUALISATION
         # =========================
 
-        # Skip local/private IPs
         if (
             dst.startswith("192.168.")
             or dst.startswith("10.")
@@ -487,25 +726,19 @@ class Dashboard(QMainWindow):
         ):
             return
 
-        # =========================
-        # PATH RATE LIMITING
-        # =========================
-
         current_time = time.time()
 
-        cooldown = 3
+        cooldown = 5
 
         last_seen = self.last_seen_paths.get(
             dst,
             0
         )
 
-        # Redraw every X seconds
         if current_time - last_seen > cooldown:
 
             self.last_seen_paths[dst] = current_time
 
-            # Use cache
             if dst in self.geo_cache:
 
                 geo = self.geo_cache[dst]
@@ -538,14 +771,34 @@ class Dashboard(QMainWindow):
                 """
 
                 self.map_widget.page().runJavaScript(js)
-            
+
+    # =========================
+    # LAN SCANNING
+    # =========================
+
     def run_lan_scan(self):
 
-        self.lan_table.setRowCount(0)
-
-        devices = scan_network(
-            "192.168.1.0/24"
+        self.status_label.setText(
+            "Status: Scanning LAN..."
         )
+
+        self.scan_button.setEnabled(False)
+
+        self.worker = LanScanWorker()
+
+        self.worker.finished.connect(
+            self.populate_lan_table
+        )
+
+        self.lan_table.cellDoubleClicked.connect(
+            self.scan_selected_device
+        )
+
+        self.worker.start()
+
+    def populate_lan_table(self, devices):
+
+        self.lan_table.setRowCount(0)
 
         for device in devices:
 
@@ -569,4 +822,160 @@ class Dashboard(QMainWindow):
                 row,
                 2,
                 QTableWidgetItem(device["vendor"])
+            )
+
+            self.lan_table.setItem(
+                row,
+                3,
+                QTableWidgetItem(
+                    device["hostname"]
+                )
+            )
+
+            self.lan_table.setItem(
+                row,
+                4,
+                QTableWidgetItem(
+                    device["device_type"]
+                )
+            )
+
+        self.status_label.setText(
+            "Status: Monitoring"
+        )
+
+        self.scan_button.setEnabled(True)
+
+    def update_beacon_table(self):
+
+        self.beacon_table.setRowCount(0)
+
+        for ip, data in beaconing_results.items():
+
+            row = self.beacon_table.rowCount()
+
+            self.beacon_table.insertRow(row)
+
+            self.beacon_table.setItem(
+                row,
+                0,
+                QTableWidgetItem(ip)
+            )
+
+            self.beacon_table.setItem(
+                row,
+                1,
+                QTableWidgetItem(
+                    str(data["hits"])
+                )
+            )
+
+            self.beacon_table.setItem(
+                row,
+                2,
+                QTableWidgetItem(
+                    f'{data["avg_interval"]}s'
+                )
+            )
+
+            severity_item = QTableWidgetItem(
+                "HIGH"
+            )
+
+            severity_item.setForeground(
+                Qt.GlobalColor.red
+            )
+
+            self.beacon_table.setItem(
+                row,
+                3,
+                severity_item
+            )
+
+    def scan_selected_device(
+        self,
+        row,
+        column
+    ):
+
+            ip_item = self.lan_table.item(
+            row,
+            0
+        )
+
+            if not ip_item:
+                return
+
+            ip = ip_item.text()
+
+            self.selected_device_label.setText(
+                f"Scanning: {ip}"
+            )
+
+            self.port_table.setRowCount(0)
+
+            results = scan_ports(ip)
+
+            for result in results:
+
+                row_position = self.port_table.rowCount()
+
+                self.port_table.insertRow(
+                    row_position
+                )
+
+                self.port_table.setItem(
+                    row_position,
+                    0,
+                    QTableWidgetItem(
+                        str(result["port"])
+                    )
+                )
+
+                self.port_table.setItem(
+                    row_position,
+                    1,
+                    QTableWidgetItem(
+                        result["service"]
+                    )
+                )
+
+                self.port_table.setItem(
+                    row_position,
+                    2,
+                    QTableWidgetItem(
+                        "OPEN"
+                    )
+                )
+
+                risk_item = QTableWidgetItem(
+                    result["risk"]
+                )
+
+                if result["risk"] == "HIGH":
+
+                    risk_item.setForeground(
+                        Qt.GlobalColor.red
+                    )
+
+                elif result["risk"] == "MEDIUM":
+
+                    risk_item.setForeground(
+                        Qt.GlobalColor.yellow
+                    )
+
+                else:
+
+                    risk_item.setForeground(
+                        Qt.GlobalColor.green
+                    )
+
+                self.port_table.setItem(
+                    row_position,
+                    3,
+                    risk_item
+                )
+
+            self.selected_device_label.setText(
+                f"Device Analysis: {ip}"
             )
