@@ -6,6 +6,7 @@ from PyQt6.QtCore import (
 )
 
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QFontDatabase
 
 # IMPORTANT
 QApplication.setAttribute(
@@ -18,6 +19,14 @@ from ui.login import LoginWindow
 
 app = QApplication(sys.argv)
 
+QFontDatabase.addApplicationFont(
+    "assets/fonts/Orbitron-VariableFont_wght.ttf"
+)
+
+QFontDatabase.addApplicationFont(
+    "assets/fonts/ShareTechMono-Regular.ttf"
+)
+
 app.setStyle("Fusion")
 
 # =========================
@@ -29,7 +38,7 @@ app.setStyleSheet("""
 QWidget {
     background-color: #05080c;
     color: #d8dee9;
-    font-family: Consolas;
+    font-family: Orbitron;
     font-size: 12px;
 }
 

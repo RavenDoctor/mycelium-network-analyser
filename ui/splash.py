@@ -72,12 +72,13 @@ class SplashScreen(QWidget):
         # Boot messages
         self.messages = [
 
-            "Loading telemetry engine...",
+            "Loading mycelium engine...",
             "Initializing packet capture...",
-            "Loading threat intelligence...",
-            "Starting behavioural analysis...",
-            "Connecting visualisation systems...",
+            "Speaking to the old mother...",
+            "Asking Emma to make me a ham and cheese toastie...",
+            "She said no :( ....",
             "Launching operator console..."
+            "Alright let's get to it..."
         ]
 
         self.index = 0
