@@ -39,7 +39,7 @@ class LanScanWorker(QThread):
     def run(self):
 
         devices = scan_network(
-            "192.168.1.0/24"
+            "192.168.0.0/24"
         )
 
         self.finished.emit(devices)
