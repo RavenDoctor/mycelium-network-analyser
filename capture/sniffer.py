@@ -75,9 +75,22 @@ class PacketSniffer(QObject):
                         int(sport)
                     )
 
-                else:
-                    process_name = "Unknown"
+                if process_name == "Unknown":
 
+                    if dst.startswith("224."):
+                        process_name = "Multicast"
+
+                    elif dst.startswith("239."):
+                        process_name = "Multicast"
+
+                    elif dst == "255.255.255.255":
+                        process_name = "Broadcast"
+
+                    elif dst.startswith(("192.168.", "10.", "172.")):
+                        process_name = "Local Network"
+
+                    else:
+                        process_name = "Unresolved"
                 # Detection engine
                 alerts, severity = analyse_packet(
                     process_name,

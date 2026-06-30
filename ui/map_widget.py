@@ -13,6 +13,8 @@ class MapWidget(QWebEngineView):
 
         self.loadFinished.connect(self.on_load_finished)
 
+                
+        self.pending_paths = []
         html = """
         <!DOCTYPE html>
         <html>
@@ -50,23 +52,28 @@ class MapWidget(QWebEngineView):
                 }
 
                 .leaflet-popup-content-wrapper {
+                    background: #1E293B;
+                    border: 1px solid #334155;
+                    border-radius: 12px;
+                    box-shadow: 0 8px 20px rgba(0,0,0,0.45);
+                    width: 180px
+                }
 
-    background: #0d1117;
-    color: #00ffee;
-    border: 1px solid #00ffee;
-    border-radius: 10px;
-    font-family: 'Share Tech Mono';
-}
+                .leaflet-popup-content {
+                    margin: 6px;
+                    color: #F8FAFC;
+                    font-family: "Segoe UI", sans-serif;
+                    font-size: 12px;
+                    line-height: 1;
+                }
 
-.leaflet-popup-tip {
+                .leaflet-popup-tip {
+                    background: #1E293B;
+                }
 
-    background: #0d1117;
-}
-
-.leaflet-popup-content {
-
-    font-size: 12px;
-}
+                .leaflet-container a {
+                    color: #60A5FA;
+                }
 
             </style>
 
@@ -91,15 +98,18 @@ class MapWidget(QWebEngineView):
                 ).addTo(map);
 
                 function addAttackPath(
-                    lat,
-                    lon,
+                    originLat,
+                    originLon,
+                    destLat,
+                    destLon,
                     popupText,
                     severity
-                ) {
+                ){
+                
 
-                    var origin = [51.5074, -0.1278];
+                    var origin = [originLat, originLon];
 
-                    var destination = [lat, lon];
+                    var destination = [destLat, destLon];       
 
                     let color = 'cyan';
 
@@ -128,9 +138,16 @@ class MapWidget(QWebEngineView):
                             fillColor: color,
                             fillOpacity: 0.8
                         }
-                    )
-                    .addTo(map)
-                    .bindPopup(popupText);
+                    ).addTo(map);
+
+                    marker.bindPopup(popupText, {
+                        autoPan: false,
+                        keepInView: false,
+                        autoClose: false,
+                        closeButton: true,
+                        maxWidth: 260,
+                        minWidth: 220
+                    });
 
                     let opacity = 0.8;
 
@@ -165,8 +182,81 @@ class MapWidget(QWebEngineView):
         </html>
         """
 
-        self.setHtml(html, QUrl(""))
+        self.setHtml(html)
 
-    def on_load_finished(self):
+    def on_load_finished(self, ok):
+
+        print("Map ready:", ok)
+
+        if not ok:
+            return
 
         self.map_ready = True
+
+        for (
+            origin_lat,
+            origin_lon,
+            dest_lat,
+            dest_lon,
+            popup,
+            severity
+        ) in self.pending_paths:
+
+            self.add_attack_path(
+                origin_lat,
+                origin_lon,
+                dest_lat,
+                dest_lon,
+                popup,
+                severity
+            )
+
+        self.pending_paths.clear()
+
+    def add_attack_path(
+        self,
+        origin_lat,
+        origin_lon,
+        dest_lat,
+        dest_lon,
+        popup,
+        severity
+    ):
+        
+        
+        
+        if not self.map_ready:
+
+            self.pending_paths.append(
+                (
+                    origin_lat,
+                    origin_lon,
+                    dest_lat,
+                    dest_lon,
+                    popup,
+                    severity
+                )
+            )
+
+            return
+
+
+        popup = (
+            popup
+            .replace("\\", "\\\\")
+            .replace("'", "\\'")
+            .replace("\n", "<br>")
+        )
+
+        self.page().runJavaScript(
+            f"""
+            addAttackPath(
+                {origin_lat},
+                {origin_lon},
+                {dest_lat},
+                {dest_lon},
+                '{popup}',
+                '{severity}'
+            );
+            """
+        )

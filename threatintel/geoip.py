@@ -23,3 +23,28 @@ def lookup_ip(ip):
         pass
 
     return None
+
+import requests
+
+
+def lookup_my_location():
+
+    try:
+
+        response = requests.get(
+            "http://ip-api.com/json/"
+        )
+
+        data = response.json()
+
+        if data["status"] == "success":
+
+            return {
+                "lat": data["lat"],
+                "lon": data["lon"]
+            }
+
+    except:
+        pass
+
+    return None
