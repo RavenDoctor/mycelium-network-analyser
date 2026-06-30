@@ -288,18 +288,21 @@ class Dashboard(QMainWindow):
         # TOP BAR
         # =========================
 
-        self.packet_label = QLabel(
-            "Packets: 0"
-        )
+        self.health_card = QLabel("Network Health\n85/100")
+        self.device_card = QLabel("Devices\n0")
+        self.alert_card = QLabel("Alerts\n0")
+        card_style = """
+        QLabel {
+            background-color: #2b2b2b;
+            border-radius: 10px;
+            padding: 20px;
+            font-size: 18px;
+        }
+        """
 
-        self.alert_label = QLabel(
-            "Threats: 0"
-        )
-
-        self.status_label = QLabel(
-            "Status: Monitoring"
-        )
-
+        self.health_card.setStyleSheet(card_style)
+        self.device_card.setStyleSheet(card_style)
+        self.alert_card.setStyleSheet(card_style)
         self.scan_button = QPushButton(
             "Scan LAN"
         )

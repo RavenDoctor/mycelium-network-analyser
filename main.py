@@ -36,36 +36,36 @@ app.setStyle("Fusion")
 app.setStyleSheet("""
 
 QWidget {
-    background-color: #05080c;
-    color: #d8dee9;
-    font-family: Orbitron;
+    background-color: #0f172a;
+    color: #F9FAFB;
+    font-family: "Segoe UI";
     font-size: 12px;
 }
 
 QLabel {
-    color: #4dd0e1;
+    color: #F9FAFB;
 }
 
 QTableWidget {
-    background-color: #0b1118;
-    border: none;
-    gridline-color: #16202a;
+    background-color: #1F2937;
+    border: 1px solid #374151;
+    gridline-color: #374151;
     color: white;
-    selection-background-color: #123040;
+    selection-background-color: #3B82F6;
 }
 
 QHeaderView::section {
-    background-color: #111827;
-    color: #4dd0e1;
-    padding: 6px;
+    background-color: #374151;
+    color: white;
+    padding: 8px;
     border: none;
-    font-weight: bold;
+    font-weight: 600;
 }
 
 QListWidget {
-    background-color: #0b1118;
-    border: none;
-    color: white;
+    background-color: #1F2937;
+    border: 1px solid #374151;
+    border-radius: 8px;
 }
 
 QListWidget::item {
@@ -74,18 +74,19 @@ QListWidget::item {
 }
 
 QListWidget::item:selected {
-    background-color: #123040;
+    background-color: #3B82F6;
 }
 
 QPushButton {
-    background-color: #111827;
-    border: 1px solid #1f2a35;
+    background-color: #2563EB;
+    color: white;
+    border: none;
+    border-radius: 8px;
     padding: 8px;
-    color: #4dd0e1;
 }
 
 QPushButton:hover {
-    background-color: #123040;
+    background-color: #1D4ED8;
 }
 
 QLineEdit {
@@ -114,19 +115,41 @@ login_window = LoginWindow()
 # STARTUP FLOW
 # =========================
 
-def show_login():
+def show_dashboard():
 
     splash.close()
 
-    login_window.show()
+    from ui.dashboardv2 import Dashboard
+    from capture.sniffer import PacketSniffer
+
+    dashboard = Dashboard()
+
+    sniffer = PacketSniffer()
+
+    sniffer.packet_received.connect(
+        dashboard.add_packet
+    )
+
+    import threading
+
+    threading.Thread(
+        target=sniffer.start,
+        daemon=True
+    ).start()
+
+    dashboard.sniffer = sniffer
+
+    dashboard.show()
+
+    app.dashboard = dashboard
+
+QTimer.singleShot(
+    5000,
+    show_dashboard
+)
 
 # SHOW SPLASH
 splash.show()
 
-# WAIT 5s THEN LOGIN
-QTimer.singleShot(
-    5000,
-    show_login
-)
 
 sys.exit(app.exec())

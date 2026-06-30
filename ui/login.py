@@ -140,7 +140,7 @@ class LoginWindow(QWidget):
 
     def login(self):
 
-        from ui.dashboard import Dashboard
+        from ui.dashboardv2 import Dashboard
 
         username = self.username.text()
 

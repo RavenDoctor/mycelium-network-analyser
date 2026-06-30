@@ -95,7 +95,6 @@ def scan_network(ip_range):
         packet,
         timeout=2,
         verbose=0,
-        iface="Realtek RTL8822CE 802.11ac PCIe Adapter"
     )[0]
 
     for sent, received in result:
